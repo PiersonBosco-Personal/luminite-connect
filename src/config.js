@@ -13,16 +13,27 @@ export function mergeMcpJson(prev, mcpUrl) {
   return next;
 }
 
+/**
+ * Replace (not append-duplicate) the Luminite hook group for one event while
+ * preserving any hook groups the user defined themselves. Idempotent across
+ * re-runs: a prior Luminite group is dropped and re-added, foreign groups stay.
+ */
+function withLuminiteHook(groups, command) {
+  const foreign = (Array.isArray(groups) ? groups : []).filter(
+    (g) => !g?.hooks?.some((h) => typeof h?.command === "string" && h.command.includes("luminite-hook.mjs")),
+  );
+  return [...foreign, { hooks: [{ type: "command", command }] }];
+}
+
 export function mergeSettingsLocal(prev, rawToken) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
   next.env = { ...(next.env || {}), LUMINITE_TOKEN: rawToken };
   next.hooks = { ...(next.hooks || {}) };
-  next.hooks.SessionStart = [
-    { hooks: [{ type: "command", command: `node ${HELPER} session-start` }] },
-  ];
-  next.hooks.Stop = [
-    { hooks: [{ type: "command", command: `node ${HELPER} stop` }] },
-  ];
+  // HELPER is a repo-relative path on purpose: Claude Code runs hooks with the
+  // project root as CWD, and settings.local.json is gitignored/per-machine, so a
+  // relative path stays correct if the repo is moved or re-cloned.
+  next.hooks.SessionStart = withLuminiteHook(next.hooks.SessionStart, `node ${HELPER} session-start`);
+  next.hooks.Stop = withLuminiteHook(next.hooks.Stop, `node ${HELPER} stop`);
   // NOTE: permissions are intentionally never touched here.
   return next;
 }

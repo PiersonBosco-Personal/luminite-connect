@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored } from "../src/config.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig } from "../src/config.js";
+import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
   const prev = { mcpServers: { other: { type: "http", url: "x" } } };
@@ -28,4 +32,48 @@ test("ensureGitignored appends only missing entries", () => {
   ]);
   assert.equal((out.match(/luminite-connect\.json/g) || []).length, 1);
   assert.match(out, /node_modules/);
+});
+
+test("mergeSettingsLocal preserves foreign hooks and does not duplicate the luminite hook", () => {
+  const prev = {
+    hooks: {
+      Stop: [{ hooks: [{ type: "command", command: "echo my-own-hook" }] }],
+      SessionStart: [
+        { hooks: [{ type: "command", command: "node .claude/hooks/luminite-hook.mjs session-start" }] },
+      ],
+    },
+  };
+  const next = mergeSettingsLocal(prev, "tok");
+  // foreign Stop hook kept, luminite Stop appended after it
+  assert.equal(next.hooks.Stop.length, 2);
+  assert.match(next.hooks.Stop[0].hooks[0].command, /echo my-own-hook/);
+  assert.match(next.hooks.Stop[1].hooks[0].command, /luminite-hook\.mjs stop/);
+  // prior luminite SessionStart replaced, NOT duplicated
+  assert.equal(next.hooks.SessionStart.length, 1);
+  assert.match(next.hooks.SessionStart[0].hooks[0].command, /session-start/);
+});
+
+test("writeConfig persists state with BOTH api_url and mcp_url", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-"));
+  try {
+    const paths = configPaths(root);
+    writeConfig(paths, {
+      mcpUrl: "https://api.luminiteapp.com/api/mcp",
+      apiUrl: "https://api.luminiteapp.com/api",
+      rawToken: "tok-xyz",
+      tokenId: 7,
+      projectId: 3,
+    });
+    const state = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.equal(state.api_url, "https://api.luminiteapp.com/api");
+    assert.equal(state.mcp_url, "https://api.luminiteapp.com/api/mcp");
+    assert.equal(state.token_id, 7);
+    assert.equal(state.project_id, 3);
+    const mcp = JSON.parse(readFileSync(paths.mcpJson, "utf8"));
+    assert.equal(mcp.mcpServers.luminite.url, "https://api.luminiteapp.com/api/mcp");
+    const gi = readFileSync(paths.gitignore, "utf8");
+    assert.match(gi, /\.claude\/luminite-connect\.json/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
