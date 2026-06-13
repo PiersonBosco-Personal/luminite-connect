@@ -1,0 +1,11 @@
+{
+  "name": "luminite-connect",
+  "version": "0.1.0",
+  "description": "Connect a repo to its Luminite project for Claude Code (token + hooks).",
+  "type": "module",
+  "bin": { "luminite-connect": "src/cli.js" },
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test" },
+  "files": ["src"],
+  "license": "MIT"
+}
