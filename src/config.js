@@ -23,19 +23,23 @@ function withLuminiteHook(groups, command) {
   return [...foreign, { hooks: [{ type: "command", command }] }];
 }
 
-export function mergeSettingsLocal(prev, rawToken, hookPath) {
+export function mergeSettingsLocal(prev, rawToken) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
   next.env = { ...(next.env || {}), LUMINITE_TOKEN: rawToken };
   next.hooks = { ...(next.hooks || {}) };
-  // Absolute, quoted path on purpose. Claude Code runs hooks with its working
-  // directory set to the git repo of the file being changed — NOT necessarily
-  // the directory the hook was installed in. When Claude is launched in a folder
-  // that contains a nested git repo, a CWD-relative path resolves against the
-  // nested repo and fails ("Cannot find module …/.claude/hooks/luminite-hook.mjs").
-  // An absolute path resolves identically regardless of CWD. settings.local.json
-  // is gitignored and regenerated per-machine by the installer, so baking in an
-  // absolute path is safe. JSON.stringify quotes + escapes spaces in the path.
-  const helper = JSON.stringify(hookPath);
+  // $CLAUDE_PROJECT_DIR — set by Claude Code to the project root (its launch dir)
+  // when it runs a hook, resolved in Claude's OWN filesystem namespace. We use it
+  // instead of a baked path because neither alternative survives both real-world
+  // setups:
+  //   • A CWD-relative path breaks when Claude runs the hook from the git repo of
+  //     the edited file, which may be a NESTED repo, not the install dir.
+  //   • A host-absolute path baked at install time breaks across a symlink /
+  //     container boundary — e.g. Claude running in a dockerized sandbox where the
+  //     host path "/Users/…/.claude/hooks/luminite-hook.mjs" does not exist.
+  // $CLAUDE_PROJECT_DIR resolves correctly in both cases. The hook helper always
+  // lives at <root>/.claude/hooks/luminite-hook.mjs, so the project-relative tail
+  // is constant. Quoted so spaces in the resolved path are safe.
+  const helper = '"$CLAUDE_PROJECT_DIR/.claude/hooks/luminite-hook.mjs"';
   next.hooks.SessionStart = withLuminiteHook(next.hooks.SessionStart, `node ${helper} session-start`);
   next.hooks.Stop = withLuminiteHook(next.hooks.Stop, `node ${helper} stop`);
   // NOTE: permissions are intentionally never touched here.
@@ -70,7 +74,7 @@ export function writeConfig(paths, { mcpUrl, rawToken, apiUrl, tokenId, projectI
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 
   writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), mcpUrl));
-  writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken, paths.hookHelper));
+  writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken));
   writeJson(paths.state, { token_id: tokenId, project_id: projectId, api_url: apiUrl, mcp_url: mcpUrl });
 
   const gi = existsSync(paths.gitignore) ? readFileSync(paths.gitignore, "utf8") : "";
