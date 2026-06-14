@@ -3,7 +3,8 @@
 // by Claude Code's SessionStart and Stop hooks. Zero dependencies.
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MARKER = /(?:\/\/|\/\*|#)\s*(TODO|FIXME)\b[:\s]*(.+?)\s*(?:\*\/)?\s*$/;
 
@@ -34,11 +35,16 @@ export function buildSyncPayload(files, readFile) {
 // ── runtime wiring (skipped when imported by tests) ──────────────────────────
 
 function config() {
-  const statePath = join(process.cwd(), ".claude", "luminite-connect.json");
+  // This file lives at <root>/.claude/hooks/luminite-hook.mjs. Resolve config
+  // relative to THIS file, not process.cwd(): Claude Code may run the hook with
+  // its CWD set to a nested git repo rather than the directory it was installed
+  // in, so process.cwd() can point at the wrong .claude/.
+  const claudeDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const statePath = join(claudeDir, "luminite-connect.json");
   const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
   let token = process.env.LUMINITE_TOKEN;
   if (!token) {
-    const sp = join(process.cwd(), ".claude", "settings.local.json");
+    const sp = join(claudeDir, "settings.local.json");
     if (existsSync(sp)) token = JSON.parse(readFileSync(sp, "utf8"))?.env?.LUMINITE_TOKEN;
   }
   // Prefer the explicit mcp_url persisted by the installer; fall back to

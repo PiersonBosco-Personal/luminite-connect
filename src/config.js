@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-const HELPER = ".claude/hooks/luminite-hook.mjs";
-
 export function mergeMcpJson(prev, mcpUrl) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
   next.mcpServers = { ...(next.mcpServers || {}) };
@@ -25,15 +23,21 @@ function withLuminiteHook(groups, command) {
   return [...foreign, { hooks: [{ type: "command", command }] }];
 }
 
-export function mergeSettingsLocal(prev, rawToken) {
+export function mergeSettingsLocal(prev, rawToken, hookPath) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
   next.env = { ...(next.env || {}), LUMINITE_TOKEN: rawToken };
   next.hooks = { ...(next.hooks || {}) };
-  // HELPER is a repo-relative path on purpose: Claude Code runs hooks with the
-  // project root as CWD, and settings.local.json is gitignored/per-machine, so a
-  // relative path stays correct if the repo is moved or re-cloned.
-  next.hooks.SessionStart = withLuminiteHook(next.hooks.SessionStart, `node ${HELPER} session-start`);
-  next.hooks.Stop = withLuminiteHook(next.hooks.Stop, `node ${HELPER} stop`);
+  // Absolute, quoted path on purpose. Claude Code runs hooks with its working
+  // directory set to the git repo of the file being changed — NOT necessarily
+  // the directory the hook was installed in. When Claude is launched in a folder
+  // that contains a nested git repo, a CWD-relative path resolves against the
+  // nested repo and fails ("Cannot find module …/.claude/hooks/luminite-hook.mjs").
+  // An absolute path resolves identically regardless of CWD. settings.local.json
+  // is gitignored and regenerated per-machine by the installer, so baking in an
+  // absolute path is safe. JSON.stringify quotes + escapes spaces in the path.
+  const helper = JSON.stringify(hookPath);
+  next.hooks.SessionStart = withLuminiteHook(next.hooks.SessionStart, `node ${helper} session-start`);
+  next.hooks.Stop = withLuminiteHook(next.hooks.Stop, `node ${helper} stop`);
   // NOTE: permissions are intentionally never touched here.
   return next;
 }
@@ -66,7 +70,7 @@ export function writeConfig(paths, { mcpUrl, rawToken, apiUrl, tokenId, projectI
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 
   writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), mcpUrl));
-  writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken));
+  writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken, paths.hookHelper));
   writeJson(paths.state, { token_id: tokenId, project_id: projectId, api_url: apiUrl, mcp_url: mcpUrl });
 
   const gi = existsSync(paths.gitignore) ? readFileSync(paths.gitignore, "utf8") : "";
