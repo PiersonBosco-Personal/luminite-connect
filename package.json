@@ -5,7 +5,7 @@
   "type": "module",
   "bin": { "luminite-connect": "src/cli.js" },
   "engines": { "node": ">=18" },
-  "scripts": { "test": "node --test" },
+  "scripts": { "test": "node --test", "prepublishOnly": "node --test" },
   "files": ["src"],
   "license": "MIT"
 }
