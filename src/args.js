@@ -8,7 +8,7 @@ export function parseArgs(argv) {
     else if (arg === "--help" || arg === "-h") out.help = true;
     else if (arg === "--url") out.url = argv[++i] ?? out.url;
   }
-  // strip a trailing slash so `${url}/api` never doubles up
+  // strip a trailing slash so `${url}/cli/connect` never doubles up
   out.url = out.url.replace(/\/+$/, "");
   return out;
 }
