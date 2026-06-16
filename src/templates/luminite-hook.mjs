@@ -135,12 +135,51 @@ async function sessionStart({ mcpUrl, token }) {
   process.stdout.write(text + "\n\n");
 }
 
-async function stop() {
-  // No code-comment scraping. Just remind Claude to keep task state current.
-  process.stdout.write(
-    "Luminite: if a task changed state this turn, update it now — " +
-    "move it to In Progress when you start, complete it when you finish.\n",
-  );
+async function readStdin() {
+  if (process.stdin.isTTY) return ""; // no payload piped (e.g. manual run)
+  let data = "";
+  for await (const chunk of process.stdin) data += chunk;
+  return data;
+}
+
+function safeParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+async function stop(cfg) {
+  // Claude Code passes { transcript_path, stop_hook_active, cwd, ... } on stdin.
+  const input = safeParse(await readStdin()) ?? {};
+
+  // Loop safety: if we already blocked this stop cycle, never re-block.
+  if (input.stop_hook_active) return;
+
+  const tp = input.transcript_path;
+  if (!tp || !existsSync(tp)) return; // can't inspect the turn → fail open
+
+  const { mutated, synced } = parseTranscriptTurn(readFileSync(tp, "utf8"));
+  if (!mutated || synced) return; // nothing to nudge — skip the network call
+
+  // Code changed with no Luminite write this turn → ask what's In Progress.
+  let inProgressText = "";
+  try {
+    const out = await rpc(cfg.mcpUrl, cfg.token, "tools/call", {
+      name: "get_open_tasks",
+      arguments: { status: "in_progress" },
+    });
+    inProgressText = out?.result?.content?.[0]?.text ?? "";
+  } catch {
+    return; // network/server error → fail open, never trap the session
+  }
+
+  if (shouldBlock({ stopHookActive: false, mutated, synced, inProgressText })) {
+    // JSON on stdout with decision:block feeds `reason` back to Claude as an
+    // instruction and prevents the turn from ending — exactly one nudge.
+    process.stdout.write(JSON.stringify({ decision: "block", reason: BLOCK_REASON }) + "\n");
+  }
 }
 
 async function main() {
@@ -148,7 +187,7 @@ async function main() {
   const cfg = config();
   if (!cfg.token || !cfg.mcpUrl) return; // not connected — stay silent
   if (cmd === "session-start") await sessionStart(cfg);
-  else if (cmd === "stop") await stop();
+  else if (cmd === "stop") await stop(cfg);
 }
 
 // Only run when executed directly (not when imported by the test suite).
