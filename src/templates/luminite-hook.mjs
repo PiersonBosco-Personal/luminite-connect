@@ -5,6 +5,91 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// ── pure decision helpers (exported for tests; safe to import) ───────────────
+
+export const FILE_MUTATION_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+export const LUMINITE_WRITE_TOOLS = new Set([
+  "mcp__luminite__create_task",
+  "mcp__luminite__update_task",
+  "mcp__luminite__complete_task",
+  "mcp__luminite__create_note",
+  "mcp__luminite__update_note",
+]);
+
+export const BLOCK_REASON =
+  "You changed code this turn but no Luminite task is In Progress. Move the task " +
+  "you're working on to In Progress with update_task (infer it from the open tasks; " +
+  "ask if ambiguous). If no task applies to this change, say so and finish.";
+
+function isUserPrompt(entry) {
+  const msg = entry?.message;
+  if (!msg || msg.role !== "user") return false;
+  const content = msg.content;
+  if (typeof content === "string") return content.trim() !== "";
+  if (Array.isArray(content)) {
+    // A genuine prompt carries a text block and no tool_result block.
+    const hasToolResult = content.some((c) => c?.type === "tool_result");
+    const hasText = content.some((c) => c?.type === "text");
+    return hasText && !hasToolResult;
+  }
+  return false;
+}
+
+function toolUseNames(entry) {
+  const content = entry?.message?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((c) => c?.type === "tool_use" && typeof c.name === "string")
+    .map((c) => c.name);
+}
+
+/**
+ * Inspect the current turn (everything after the last genuine user prompt) and
+ * report whether it mutated files and whether it already wrote to Luminite.
+ */
+export function parseTranscriptTurn(jsonlText) {
+  const entries = [];
+  for (const line of String(jsonlText).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      entries.push(JSON.parse(trimmed));
+    } catch {
+      /* skip malformed line */
+    }
+  }
+
+  let boundary = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (isUserPrompt(entries[i])) {
+      boundary = i;
+      break;
+    }
+  }
+
+  let mutated = false;
+  let synced = false;
+  for (let i = boundary + 1; i < entries.length; i++) {
+    for (const name of toolUseNames(entries[i])) {
+      if (FILE_MUTATION_TOOLS.has(name)) mutated = true;
+      if (LUMINITE_WRITE_TOOLS.has(name)) synced = true;
+    }
+  }
+  return { mutated, synced };
+}
+
+/** True when get_open_tasks{status:in_progress} reports an empty result. */
+export function nothingInProgress(probeText) {
+  return typeof probeText === "string" && probeText.trimStart().startsWith("No tasks match");
+}
+
+/** The single source of truth for whether the Stop gate blocks. */
+export function shouldBlock({ stopHookActive, mutated, synced, inProgressText }) {
+  if (stopHookActive) return false;
+  if (!mutated || synced) return false;
+  return nothingInProgress(inProgressText);
+}
+
 // ── runtime wiring (skipped when imported by tests) ──────────────────────────
 
 function config() {
