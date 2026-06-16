@@ -29,9 +29,13 @@ export function mergeClaudeMd(prev, block = LUMINITE_BLOCK) {
   const startIdx = content.indexOf(START);
   const endIdx = content.indexOf(END);
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    return content.slice(0, startIdx) + block + content.slice(endIdx + END.length);
+    const tail = content.slice(endIdx + END.length);
+    return content.slice(0, startIdx) + block + (tail || "\n");
   }
 
+  // A partial/orphaned marker (e.g. user deleted the END marker by hand) falls
+  // through to append. The next install run will find a complete START…END pair
+  // and replace in place, automatically cleaning up the orphan.
   if (content.trim() === "") return block + "\n";
 
   const base = content.endsWith("\n") ? content : content + "\n";
