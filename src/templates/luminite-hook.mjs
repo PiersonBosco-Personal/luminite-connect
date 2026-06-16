@@ -59,6 +59,8 @@ export function parseTranscriptTurn(jsonlText) {
     }
   }
 
+  // -1 means "no genuine user prompt found → scan the whole transcript". This
+  // can over-count mutations (never under-count), the safer failure mode here.
   let boundary = -1;
   for (let i = entries.length - 1; i >= 0; i--) {
     if (isUserPrompt(entries[i])) {
@@ -78,7 +80,11 @@ export function parseTranscriptTurn(jsonlText) {
   return { mutated, synced };
 }
 
-/** True when get_open_tasks{status:in_progress} reports an empty result. */
+/**
+ * True when get_open_tasks{status:in_progress} reports an empty result.
+ * NOTE: coupled to the get_open_tasks empty-result phrasing ("No tasks match").
+ * A server-side copy change silently disables the gate (returns false → no block).
+ */
 export function nothingInProgress(probeText) {
   return typeof probeText === "string" && probeText.trimStart().startsWith("No tasks match");
 }

@@ -38,6 +38,26 @@ test("parseTranscriptTurn: malformed lines are skipped", () => {
   assert.equal(parseTranscriptTurn(jsonl).mutated, true);
 });
 
+test("parseTranscriptTurn: no user prompt → scans all entries (boundary=-1 fallback)", () => {
+  const jsonl = assistantTool("Edit"); // transcript with no user entry at all
+  assert.deepEqual(parseTranscriptTurn(jsonl), { mutated: true, synced: false });
+});
+
+test("parseTranscriptTurn: parallel Edit + luminite write in one entry → mutated and synced", () => {
+  const entry = JSON.stringify({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "tool_use", name: "Edit" },
+        { type: "tool_use", name: "mcp__luminite__update_task" },
+      ],
+    },
+  });
+  const jsonl = [userPrompt("do both"), entry].join("\n");
+  assert.deepEqual(parseTranscriptTurn(jsonl), { mutated: true, synced: true });
+});
+
 test("nothingInProgress: 'No tasks match' → true, 'Tasks (n)' → false", () => {
   assert.equal(nothingInProgress("No tasks match the given filters."), true);
   assert.equal(nothingInProgress("Tasks (2):\n- #1 ..."), false);
