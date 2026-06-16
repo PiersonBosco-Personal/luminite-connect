@@ -39,13 +39,9 @@ async function sessionStart({ mcpUrl, token }) {
   const out = await rpc(mcpUrl, token, "tools/call", { name: "get_session_context", arguments: {} });
   const text = out?.result?.content?.[0]?.text ?? "";
   // stdout from a SessionStart hook is injected into Claude's context.
+  // The "keep in sync" instruction now lives in the installed CLAUDE.md block
+  // (higher priority), so it is intentionally NOT repeated here.
   process.stdout.write(text + "\n\n");
-  process.stdout.write(
-    "Proactively keep Luminite in sync while you work, without being asked: " +
-      "move a task to In Progress with update_task when you start it, complete_task when you finish, " +
-      "and create_note (linked via task_id) when you make a notable decision. " +
-      "Infer the current task from the open tasks above; ask if it is ambiguous.\n",
-  );
 }
 
 async function stop() {
