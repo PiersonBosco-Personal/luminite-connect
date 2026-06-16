@@ -137,9 +137,18 @@ async function sessionStart({ mcpUrl, token }) {
 
 async function readStdin() {
   if (process.stdin.isTTY) return ""; // no payload piped (e.g. manual run)
-  let data = "";
-  for await (const chunk of process.stdin) data += chunk;
-  return data;
+  // Resolve on EOF normally; fall back after 3s so a stdin that never closes
+  // can never trap the hook (the for-await form would hang indefinitely, and
+  // the main().catch backstop does not rescue a non-resolving iterator).
+  return new Promise((resolve) => {
+    let data = "";
+    const t = setTimeout(() => resolve(data), 3000);
+    process.stdin.on("data", (c) => (data += c));
+    process.stdin.on("end", () => {
+      clearTimeout(t);
+      resolve(data);
+    });
+  });
 }
 
 function safeParse(s) {
