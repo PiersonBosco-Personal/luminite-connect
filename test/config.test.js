@@ -89,3 +89,44 @@ test("writeConfig persists state with BOTH api_url and mcp_url", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("writeConfig writes the Luminite block to project-root CLAUDE.md without gitignoring it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lc-claudemd-"));
+  try {
+    const paths = configPaths(dir);
+    writeConfig(paths, {
+      mcpUrl: "https://api.luminiteapp.com/api/mcp",
+      apiUrl: "https://api.luminiteapp.com",
+      rawToken: "tok-xyz",
+      tokenId: 7,
+      projectId: 3,
+    });
+    const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
+    assert.ok(claude.includes("<!-- LUMINITE:START -->"));
+    assert.ok(claude.includes("## Luminite project sync"));
+    const gi = readFileSync(join(dir, ".gitignore"), "utf8");
+    assert.ok(!gi.includes("CLAUDE.md"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeConfig re-run does not duplicate the CLAUDE.md block", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lc-claudemd2-"));
+  try {
+    const paths = configPaths(dir);
+    const args = {
+      mcpUrl: "https://api.luminiteapp.com/api/mcp",
+      apiUrl: "https://api.luminiteapp.com",
+      rawToken: "tok",
+      tokenId: 1,
+      projectId: 1,
+    };
+    writeConfig(paths, args);
+    writeConfig(paths, args);
+    const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
+    assert.equal((claude.match(/LUMINITE:START/g) || []).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

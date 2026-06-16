@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mergeClaudeMd } from "./claudemd.js";
 
 export function mergeMcpJson(prev, mcpUrl) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
@@ -82,4 +83,9 @@ export function writeConfig(paths, { mcpUrl, rawToken, apiUrl, tokenId, projectI
     paths.gitignore,
     ensureGitignored(gi, [".claude/settings.local.json", ".claude/luminite-connect.json"]),
   );
+
+  // CLAUDE.md is intentionally NOT gitignored: the block is meant to be
+  // committed and shared with the team. Idempotent via markers on re-run.
+  const prevClaude = existsSync(paths.claudeMd) ? readFileSync(paths.claudeMd, "utf8") : "";
+  writeFileSync(paths.claudeMd, mergeClaudeMd(prevClaude));
 }

@@ -62,7 +62,7 @@ try {
   installHookHelper(paths);
 
   console.log(`\nConnected to ${result.projectName} ✓`);
-  console.log("Wrote .mcp.json, .claude/settings.local.json, and the SessionStart/Stop hooks.");
+  console.log("Wrote CLAUDE.md (Luminite sync block), .mcp.json, .claude/settings.local.json, and the SessionStart/Stop hooks.");
   console.log("Open this repo in Claude Code — it will pull project context and sync TODOs automatically.");
 } catch (err) {
   console.error(`\nConnection failed: ${err.message}`);

@@ -22,5 +22,6 @@ export function configPaths(root) {
     hooksDir: join(root, ".claude", "hooks"),
     hookHelper: join(root, ".claude", "hooks", "luminite-hook.mjs"),
     gitignore: join(root, ".gitignore"),
+    claudeMd: join(root, "CLAUDE.md"),
   };
 }
