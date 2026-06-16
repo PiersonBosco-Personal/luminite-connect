@@ -2,35 +2,8 @@
 // Installed into a target repo at .claude/hooks/luminite-hook.mjs and invoked
 // by Claude Code's SessionStart and Stop hooks. Zero dependencies.
 import { existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-const MARKER = /(?:\/\/|\/\*|#)\s*(TODO|FIXME)\b[:\s]*(.+?)\s*(?:\*\/)?\s*$/;
-
-/** Pure: pull TODO/FIXME comments out of one file's text. */
-export function extractTodos(file, content) {
-  const todos = [];
-  const lines = content.split(/\r\n|\r|\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(MARKER);
-    if (!m) continue;
-    const text = m[2].trim();
-    if (!text) continue;
-    todos.push({ text, file, line: i + 1, priority: m[1] === "FIXME" ? "high" : "medium" });
-  }
-  return todos;
-}
-
-/** Pure: assemble the sync_todos payload from changed files. */
-export function buildSyncPayload(files, readFile) {
-  const todos = [];
-  for (const f of files) {
-    const content = readFile(f);
-    if (content != null) todos.push(...extractTodos(f, content));
-  }
-  return { files, todos };
-}
 
 // ── runtime wiring (skipped when imported by tests) ──────────────────────────
 
@@ -62,16 +35,6 @@ async function rpc(mcpUrl, token, method, params) {
   return res.json();
 }
 
-function changedFiles() {
-  try {
-    const tracked = execFileSync("git", ["diff", "--name-only", "HEAD"], { encoding: "utf8" });
-    const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { encoding: "utf8" });
-    return [...tracked.split("\n"), ...untracked.split("\n")].map((s) => s.trim()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 async function sessionStart({ mcpUrl, token }) {
   const out = await rpc(mcpUrl, token, "tools/call", { name: "get_session_context", arguments: {} });
   const text = out?.result?.content?.[0]?.text ?? "";
@@ -85,18 +48,12 @@ async function sessionStart({ mcpUrl, token }) {
   );
 }
 
-async function stop({ mcpUrl, token }) {
-  const files = changedFiles();
-  if (files.length === 0) return;
-  const payload = buildSyncPayload(files, (f) => {
-    const p = join(process.cwd(), f);
-    return existsSync(p) ? readFileSync(p, "utf8") : null;
-  });
-  const out = await rpc(mcpUrl, token, "tools/call", { name: "sync_todos", arguments: payload });
-  const summary = out?.result?.content?.[0]?.text;
-  if (summary) {
-    process.stdout.write(`Luminite: ${summary}. If a task changed state this turn, update it now.\n`);
-  }
+async function stop() {
+  // No code-comment scraping. Just remind Claude to keep task state current.
+  process.stdout.write(
+    "Luminite: if a task changed state this turn, update it now — " +
+    "move it to In Progress when you start, complete it when you finish.\n",
+  );
 }
 
 async function main() {
@@ -104,7 +61,7 @@ async function main() {
   const cfg = config();
   if (!cfg.token || !cfg.mcpUrl) return; // not connected — stay silent
   if (cmd === "session-start") await sessionStart(cfg);
-  else if (cmd === "stop") await stop(cfg);
+  else if (cmd === "stop") await stop();
 }
 
 // Only run when executed directly (not when imported by the test suite).
