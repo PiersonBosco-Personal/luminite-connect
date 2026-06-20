@@ -19,25 +19,27 @@ ${END}`;
 
 /**
  * Merge the Luminite block into a CLAUDE.md body, idempotently.
- *   • markers present  → replace what's between them in place
- *   • no markers, has content → append, blank-line separated
+ * The block is always placed at the very TOP of the file so it sits at the
+ * highest priority, ahead of whatever else the team keeps in CLAUDE.md.
+ *   • markers present  → strip the old block, re-prepend at the top
+ *   • no markers, has content → prepend, blank-line separated
  *   • empty/missing    → just the block
  */
 export function mergeClaudeMd(prev, block = LUMINITE_BLOCK) {
   const content = typeof prev === "string" ? prev : "";
 
+  // Strip any existing Luminite block (wherever it currently sits) so we can
+  // re-place it at the top. A partial/orphaned marker is left in place and gets
+  // cleaned up once a complete START…END pair exists on a later run.
+  let rest = content;
   const startIdx = content.indexOf(START);
   const endIdx = content.indexOf(END);
   if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    const tail = content.slice(endIdx + END.length);
-    return content.slice(0, startIdx) + block + (tail || "\n");
+    rest = content.slice(0, startIdx) + content.slice(endIdx + END.length);
   }
 
-  // A partial/orphaned marker (e.g. user deleted the END marker by hand) falls
-  // through to append. The next install run will find a complete START…END pair
-  // and replace in place, automatically cleaning up the orphan.
-  if (content.trim() === "") return block + "\n";
+  rest = rest.replace(/^\s+/, "");
+  if (rest === "") return block + "\n";
 
-  const base = content.endsWith("\n") ? content : content + "\n";
-  return base + "\n" + block + "\n";
+  return block + "\n\n" + rest;
 }

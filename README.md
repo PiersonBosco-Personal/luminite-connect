@@ -11,7 +11,7 @@ npx luminite-connect --help
 
 Connecting opens your browser to authorize, then writes (to the project root):
 
-- **`CLAUDE.md`** — a marker-delimited (`<!-- LUMINITE:START -->` … `<!-- LUMINITE:END -->`) "Luminite project sync" block carrying the keep-in-sync workflow. Idempotent (re-running replaces it in place, never duplicates) and **committed/shared** with your team (not gitignored).
+- **`CLAUDE.md`** — a marker-delimited (`<!-- LUMINITE:START -->` … `<!-- LUMINITE:END -->`) "Luminite project sync" block carrying the keep-in-sync workflow. Written at the **top** of the file (highest priority) and idempotent (re-running re-places it at the top, never duplicates) and **committed/shared** with your team (not gitignored).
 - **`.mcp.json`** — registers the `luminite` MCP server (token referenced via env, never inlined).
 - **`.claude/settings.local.json`** — the `LUMINITE_TOKEN` env var plus the `SessionStart` and `Stop` hooks. **Gitignored.**
 - **`.claude/hooks/luminite-hook.mjs`** — the zero-dependency hook helper.
