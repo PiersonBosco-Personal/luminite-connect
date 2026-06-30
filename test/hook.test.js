@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTranscriptTurn, nothingInProgress, shouldBlock } from "../src/templates/luminite-hook.mjs";
+import {
+  parseTranscriptTurn,
+  nothingInProgress,
+  shouldBlock,
+  completionNeedsSummary,
+} from "../src/templates/luminite-hook.mjs";
 
 const userPrompt = (t) => JSON.stringify({ type: "user", message: { role: "user", content: t } });
 const assistantTool = (name) =>
@@ -71,4 +76,34 @@ test("shouldBlock: blocks only when mutated, not synced, nothing in progress, no
   assert.equal(shouldBlock({ ...base, mutated: false }), false);
   assert.equal(shouldBlock({ ...base, synced: true }), false);
   assert.equal(shouldBlock({ ...base, inProgressText: "Tasks (1):" }), false);
+});
+
+const completeTask = (input) =>
+  JSON.stringify({ type: "assistant", message: { role: "assistant", content: [
+    { type: "tool_use", name: "mcp__luminite__complete_task", input },
+  ] } });
+
+test("completionNeedsSummary: complete_task with no summary → true", () => {
+  const jsonl = [userPrompt("finish it"), completeTask({ task_id: 5 })].join("\n");
+  assert.equal(completionNeedsSummary(jsonl), true);
+});
+
+test("completionNeedsSummary: complete_task with blank summary → true", () => {
+  const jsonl = [userPrompt("done"), completeTask({ task_id: 5, summary: "   " })].join("\n");
+  assert.equal(completionNeedsSummary(jsonl), true);
+});
+
+test("completionNeedsSummary: complete_task WITH summary → false", () => {
+  const jsonl = [userPrompt("done"), completeTask({ task_id: 5, summary: "rewired auth" })].join("\n");
+  assert.equal(completionNeedsSummary(jsonl), false);
+});
+
+test("completionNeedsSummary: no complete_task this turn → false", () => {
+  const jsonl = [userPrompt("hi"), assistantTool("Edit")].join("\n");
+  assert.equal(completionNeedsSummary(jsonl), false);
+});
+
+test("completionNeedsSummary: only completions BEFORE the last prompt are ignored", () => {
+  const jsonl = [completeTask({ task_id: 1 }), userPrompt("now answer a question")].join("\n");
+  assert.equal(completionNeedsSummary(jsonl), false);
 });

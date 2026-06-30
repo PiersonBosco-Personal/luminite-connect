@@ -21,6 +21,11 @@ export const BLOCK_REASON =
   "you're working on to In Progress with update_task (infer it from the open tasks; " +
   "ask if ambiguous). If no task applies to this change, say so and finish.";
 
+export const SUMMARY_REASON =
+  "You completed a task this turn without a 'what changed' summary. Call complete_task " +
+  "again for that task with summary (what actually changed, 1-2 sentences) and rationale " +
+  "(why it made sense) so your teammate can follow the change in the team changelog.";
+
 function isUserPrompt(entry) {
   const msg = entry?.message;
   if (!msg || msg.role !== "user") return false;
@@ -78,6 +83,44 @@ export function parseTranscriptTurn(jsonlText) {
     }
   }
   return { mutated, synced };
+}
+
+/**
+ * True when the current turn contains a complete_task call whose `summary`
+ * input is missing or blank. Reuses the same last-user-prompt boundary as
+ * parseTranscriptTurn. Over-counts (never under-counts) when no prompt is found.
+ */
+export function completionNeedsSummary(jsonlText) {
+  const entries = [];
+  for (const line of String(jsonlText).split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try { entries.push(JSON.parse(t)); } catch { /* skip */ }
+  }
+
+  let boundary = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const m = entries[i]?.message;
+    if (m?.role === "user") {
+      const c = m.content;
+      const isPrompt = typeof c === "string"
+        ? c.trim() !== ""
+        : Array.isArray(c) && c.some((x) => x?.type === "text") && !c.some((x) => x?.type === "tool_result");
+      if (isPrompt) { boundary = i; break; }
+    }
+  }
+
+  for (let i = boundary + 1; i < entries.length; i++) {
+    const content = entries[i]?.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "tool_use" && block.name === "mcp__luminite__complete_task") {
+        const summary = block.input?.summary;
+        if (typeof summary !== "string" || summary.trim() === "") return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -169,7 +212,15 @@ async function stop(cfg) {
   const tp = input.transcript_path;
   if (!tp || !existsSync(tp)) return; // can't inspect the turn → fail open
 
-  const { mutated, synced } = parseTranscriptTurn(readFileSync(tp, "utf8"));
+  const transcript = readFileSync(tp, "utf8");
+
+  // Summary nudge: a task was completed this turn without a "what changed" summary.
+  if (completionNeedsSummary(transcript)) {
+    process.stdout.write(JSON.stringify({ decision: "block", reason: SUMMARY_REASON }) + "\n");
+    return; // one nudge per stop cycle
+  }
+
+  const { mutated, synced } = parseTranscriptTurn(transcript);
   if (!mutated || synced) return; // nothing to nudge — skip the network call
 
   // Code changed with no Luminite write this turn → ask what's In Progress.
