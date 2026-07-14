@@ -56,3 +56,8 @@ test("orphaned START (no END) → block prepended at top, no duplicate well-form
   assert.equal(twice, once);
   assert.equal((twice.match(/LUMINITE:END/g) || []).length, 1);
 });
+
+test("block routes decisions to add_thread_entry, not create_note", () => {
+  assert.ok(LUMINITE_BLOCK.includes("add_thread_entry"));
+  assert.ok(!LUMINITE_BLOCK.includes("create_note"));
+});
