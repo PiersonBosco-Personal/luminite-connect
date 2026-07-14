@@ -28,6 +28,11 @@ test("parseTranscriptTurn: a luminite write this turn counts as synced", () => {
   assert.equal(parseTranscriptTurn(jsonl).synced, true);
 });
 
+test("parseTranscriptTurn: capturing a thread entry counts as synced", () => {
+  const jsonl = [userPrompt("note the decision"), assistantTool("mcp__luminite__add_thread_entry")].join("\n");
+  assert.equal(parseTranscriptTurn(jsonl).synced, true);
+});
+
 test("parseTranscriptTurn: only edits BEFORE the last prompt are ignored", () => {
   const jsonl = [assistantTool("Edit"), userPrompt("now just answer a question")].join("\n");
   assert.deepEqual(parseTranscriptTurn(jsonl), { mutated: false, synced: false });

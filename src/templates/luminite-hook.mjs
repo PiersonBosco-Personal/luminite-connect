@@ -14,6 +14,7 @@ export const LUMINITE_WRITE_TOOLS = new Set([
   "mcp__luminite__complete_task",
   "mcp__luminite__create_note",
   "mcp__luminite__update_note",
+  "mcp__luminite__add_thread_entry",
 ]);
 
 export const BLOCK_REASON =
