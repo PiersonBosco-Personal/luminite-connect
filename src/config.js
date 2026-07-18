@@ -71,12 +71,86 @@ export function writeJson(path, data) {
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
 }
 
-export function writeConfig(paths, { mcpUrl, rawToken, apiUrl, tokenId, projectId }) {
+/**
+ * The state file keeps flat top-level fields describing the ACTIVE connection
+ * (mcp_url/api_url/token_id — the hook and idempotency check read these) PLUS a
+ * `profiles` map of saved connections and an `active` pointer, so you can switch
+ * environments (prod ↔ local) without re-editing files. Reading normalizes a
+ * legacy flat state (no `profiles`) into a single profile named by `active` /
+ * "prod", pulling the raw token from settings.local so old installs migrate.
+ */
+function normalizeState(paths) {
+  const raw = readJson(paths.state, {}) || {};
+  if (raw.profiles) return raw;
+  if (raw.mcp_url) {
+    const token = readJson(paths.settingsLocal, {})?.env?.LUMINITE_TOKEN ?? null;
+    const name = raw.active ?? "prod";
+    return {
+      ...raw,
+      active: name,
+      profiles: {
+        [name]: {
+          token_id: raw.token_id,
+          project_id: raw.project_id,
+          api_url: raw.api_url,
+          mcp_url: raw.mcp_url,
+          project_name: raw.project_name ?? null,
+          raw_token: token,
+        },
+      },
+    };
+  }
+  return { active: null, profiles: {} };
+}
+
+function flatFor(name, prof) {
+  return {
+    token_id: prof.token_id,
+    project_id: prof.project_id,
+    api_url: prof.api_url,
+    mcp_url: prof.mcp_url,
+    project_name: prof.project_name ?? null,
+    active: name,
+  };
+}
+
+export function listProfiles(paths) {
+  const s = normalizeState(paths);
+  return { active: s.active ?? null, profiles: s.profiles || {} };
+}
+
+/**
+ * Switch: point the live files (.mcp.json url + settings.local token) at the
+ * saved `name` profile and mark it active. Returns the profile, or null if no
+ * such profile exists. Does not touch CLAUDE.md/gitignore — those don't change
+ * between environments.
+ */
+export function applyProfile(paths, name) {
+  const s = normalizeState(paths);
+  const prof = (s.profiles || {})[name];
+  if (!prof) return null;
+  writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), prof.mcp_url));
+  writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), prof.raw_token));
+  writeJson(paths.state, { ...flatFor(name, prof), profiles: s.profiles });
+  return prof;
+}
+
+export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, tokenId, projectId, projectName }) {
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 
   writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), mcpUrl));
   writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken));
-  writeJson(paths.state, { token_id: tokenId, project_id: projectId, api_url: apiUrl, mcp_url: mcpUrl });
+
+  const profiles = { ...(normalizeState(paths).profiles || {}) };
+  profiles[name] = {
+    token_id: tokenId,
+    project_id: projectId,
+    api_url: apiUrl,
+    mcp_url: mcpUrl,
+    project_name: projectName ?? null,
+    raw_token: rawToken,
+  };
+  writeJson(paths.state, { ...flatFor(name, profiles[name]), profiles });
 
   const gi = existsSync(paths.gitignore) ? readFileSync(paths.gitignore, "utf8") : "";
   writeFileSync(

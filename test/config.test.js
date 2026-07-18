@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig } from "../src/config.js";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles } from "../src/config.js";
 import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
@@ -85,6 +85,71 @@ test("writeConfig persists state with BOTH api_url and mcp_url", () => {
     );
     const gi = readFileSync(paths.gitignore, "utf8");
     assert.match(gi, /\.claude\/luminite-connect\.json/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("switching: save two profiles, `use` swaps token + mcp url in the live files", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-switch-"));
+  try {
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "prod", mcpUrl: "https://api.luminiteapp.com/api/mcp", apiUrl: "https://api.luminiteapp.com/api", rawToken: "prod-tok", tokenId: 1, projectId: 1, projectName: "P" });
+    writeConfig(paths, { name: "local", mcpUrl: "http://localhost:8899/api/mcp", apiUrl: "http://localhost:8899/api", rawToken: "local-tok", tokenId: 2, projectId: 1, projectName: "P" });
+
+    // After connecting local last, it is active; the live files reflect local.
+    let mcp = JSON.parse(readFileSync(paths.mcpJson, "utf8"));
+    let settings = JSON.parse(readFileSync(paths.settingsLocal, "utf8"));
+    assert.equal(mcp.mcpServers.luminite.url, "http://localhost:8899/api/mcp");
+    assert.equal(settings.env.LUMINITE_TOKEN, "local-tok");
+
+    // Switch back to prod — both files flip together, no re-typing.
+    const prof = applyProfile(paths, "prod");
+    assert.equal(prof.raw_token, "prod-tok");
+    mcp = JSON.parse(readFileSync(paths.mcpJson, "utf8"));
+    settings = JSON.parse(readFileSync(paths.settingsLocal, "utf8"));
+    assert.equal(mcp.mcpServers.luminite.url, "https://api.luminiteapp.com/api/mcp");
+    assert.equal(settings.env.LUMINITE_TOKEN, "prod-tok");
+
+    // Flat top-level state (what the hook reads) tracks the active profile.
+    const state = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.equal(state.active, "prod");
+    assert.equal(state.mcp_url, "https://api.luminiteapp.com/api/mcp");
+    assert.deepEqual(Object.keys(state.profiles).sort(), ["local", "prod"]);
+
+    const { active, profiles } = listProfiles(paths);
+    assert.equal(active, "prod");
+    assert.equal(profiles.local.mcp_url, "http://localhost:8899/api/mcp");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("applyProfile returns null for an unknown profile", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-noprof-"));
+  try {
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1 });
+    assert.equal(applyProfile(paths, "staging"), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("legacy flat state migrates into a 'prod' profile on read", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-migrate-"));
+  try {
+    const paths = configPaths(root);
+    // Simulate a pre-profiles install: flat state + token in settings.local.
+    writeConfig(paths, { mcpUrl: "https://old/api/mcp", apiUrl: "https://old/api", rawToken: "old-tok", tokenId: 9, projectId: 4 });
+    // Rewrite state to the OLD flat-only shape (drop profiles) to prove migration.
+    const flat = { token_id: 9, project_id: 4, api_url: "https://old/api", mcp_url: "https://old/api/mcp" };
+    writeFileSync(paths.state, JSON.stringify(flat));
+
+    const { active, profiles } = listProfiles(paths);
+    assert.equal(active, "prod");
+    assert.equal(profiles.prod.mcp_url, "https://old/api/mcp");
+    assert.equal(profiles.prod.raw_token, "old-tok"); // pulled from settings.local
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
