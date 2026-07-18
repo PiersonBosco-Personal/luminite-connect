@@ -135,6 +135,22 @@ export function applyProfile(paths, name) {
   return prof;
 }
 
+/**
+ * Patch a profile's URL and/or token in place (no browser round-trip) and make
+ * it live+active. Keeps the existing token when only --mcp-url is given — fixing
+ * a host (e.g. localhost → host.docker.internal) does NOT need a new token.
+ * Returns the profile, or null if the result lacks a url or token.
+ */
+export function setProfile(paths, name, { mcpUrl, rawToken }) {
+  const s = normalizeState(paths);
+  const prof = { ...((s.profiles || {})[name] || {}) };
+  if (mcpUrl != null) prof.mcp_url = mcpUrl;
+  if (rawToken != null) prof.raw_token = rawToken;
+  if (!prof.mcp_url || !prof.raw_token) return null;
+  writeJson(paths.state, { ...s, profiles: { ...(s.profiles || {}), [name]: prof } });
+  return applyProfile(paths, name);
+}
+
 export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, tokenId, projectId, projectName }) {
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 

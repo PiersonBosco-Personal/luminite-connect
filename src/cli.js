@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeConfig, applyProfile, listProfiles } from "./config.js";
+import { writeConfig, applyProfile, listProfiles, setProfile } from "./config.js";
 import { parseArgs } from "./args.js";
 import { configPaths, findProjectRoot } from "./paths.js";
 import { checkToken } from "./health.js";
@@ -18,6 +18,9 @@ Usage:
                                         must reach a local API via http://host.docker.internal/api/mcp)
   npx luminite-connect <name>           Switch: point Claude Code at the saved <name> profile
   npx luminite-connect use <name>       Same as above (explicit form)
+  npx luminite-connect set <name> --mcp-url <u> [--token <t>]
+                                        Patch a profile's URL/token in place (keeps the token if omitted).
+                                        Fixes a wrong host — e.g. localhost → host.docker.internal — with no re-token.
   npx luminite-connect list             List saved profiles (* = active)
   npx luminite-connect --rotate         Force a fresh token; revokes the old one
   npx luminite-connect --help
@@ -48,6 +51,21 @@ if (args.command === "list") {
     const mark = n === active ? "*" : " ";
     console.log(`${mark} ${n.padEnd(10)} ${p.mcp_url}${p.project_name ? `   (${p.project_name})` : ""}`);
   }
+  process.exit(0);
+}
+
+if (args.command === "set") {
+  if (!args.name || (!args.mcpUrl && !args.token)) {
+    console.error("Usage: npx luminite-connect set <name> --mcp-url <url> [--token <raw>]");
+    process.exit(1);
+  }
+  const prof = setProfile(paths, args.name, { mcpUrl: args.mcpUrl, rawToken: args.token });
+  if (!prof) {
+    console.error(`Profile "${args.name}" is new — it needs BOTH --mcp-url and --token to create it.`);
+    process.exit(1);
+  }
+  console.log(`Set "${args.name}" → ${prof.mcp_url}${args.token ? " (token updated)" : " (token kept)"}`);
+  console.log("Restart Claude Code (or reload the window) to pick it up.");
   process.exit(0);
 }
 

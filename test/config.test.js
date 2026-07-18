@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles } from "../src/config.js";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile } from "../src/config.js";
 import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
@@ -120,6 +120,35 @@ test("switching: save two profiles, `use` swaps token + mcp url in the live file
     const { active, profiles } = listProfiles(paths);
     assert.equal(active, "prod");
     assert.equal(profiles.local.mcp_url, "http://localhost:8899/api/mcp");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("setProfile patches a profile's URL in place, keeping the existing token", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-set-"));
+  try {
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "local", mcpUrl: "http://localhost/api/mcp", apiUrl: "http://localhost/api", rawToken: "keep-me", tokenId: 2, projectId: 1, projectName: "P" });
+
+    const prof = setProfile(paths, "local", { mcpUrl: "http://host.docker.internal/api/mcp" });
+    assert.equal(prof.mcp_url, "http://host.docker.internal/api/mcp");
+    assert.equal(prof.raw_token, "keep-me"); // token untouched
+
+    const mcp = JSON.parse(readFileSync(paths.mcpJson, "utf8"));
+    const settings = JSON.parse(readFileSync(paths.settingsLocal, "utf8"));
+    assert.equal(mcp.mcpServers.luminite.url, "http://host.docker.internal/api/mcp");
+    assert.equal(settings.env.LUMINITE_TOKEN, "keep-me");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("setProfile refuses a brand-new profile that lacks a token", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-set2-"));
+  try {
+    const paths = configPaths(root);
+    assert.equal(setProfile(paths, "staging", { mcpUrl: "http://x/api/mcp" }), null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
