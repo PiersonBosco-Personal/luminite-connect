@@ -13,6 +13,9 @@ Usage:
   npx luminite-connect                  Connect (no-op if already connected) — saves the "prod" profile
   npx luminite-connect --url <u> --as <name>
                                         Connect against another Luminite (e.g. local) and save it as <name>
+  npx luminite-connect ... --mcp-url <u>
+                                        Override the saved MCP URL (use when Claude Code runs in Docker and
+                                        must reach a local API via http://host.docker.internal/api/mcp)
   npx luminite-connect <name>           Switch: point Claude Code at the saved <name> profile
   npx luminite-connect use <name>       Same as above (explicit form)
   npx luminite-connect list             List saved profiles (* = active)
@@ -61,12 +64,19 @@ if (args.command === "use") {
     process.exit(1);
   }
   console.log(`Switched to "${args.name}" → ${prof.mcp_url}`);
-  const ok = await checkToken(prof.mcp_url, prof.raw_token);
-  console.log(
-    ok
-      ? "Token authenticates ✓"
-      : "⚠ Token did NOT authenticate — that environment may be down or the token was revoked. Reconnect it with `npx luminite-connect --url <app> --as " + args.name + "`.",
-  );
+  // host.docker.internal only resolves inside the container where Claude Code
+  // runs — the CLI (on the host) can't reach it, so a health check here would
+  // false-alarm. Skip it and say why.
+  if (/host\.docker\.internal/.test(prof.mcp_url || "")) {
+    console.log("(Skipped reachability check — host.docker.internal is only reachable from inside the container where Claude Code runs.)");
+  } else {
+    const ok = await checkToken(prof.mcp_url, prof.raw_token);
+    console.log(
+      ok
+        ? "Token authenticates ✓"
+        : "⚠ Token did NOT authenticate — that environment may be down or the token was revoked. Reconnect it with `npx luminite-connect --url <app> --as " + args.name + "`.",
+    );
+  }
   console.log("Restart Claude Code (or reload the window) to pick up the new token/URL.");
   process.exit(0);
 }
@@ -102,7 +112,10 @@ try {
 
   writeConfig(paths, {
     name,
-    mcpUrl: result.mcpUrl,
+    // --mcp-url overrides what the connect page returned. Needed when Claude Code
+    // runs in Docker and must reach a local API via host.docker.internal — the
+    // browser (on the host) has no way to know the container-side hostname.
+    mcpUrl: args.mcpUrl ?? result.mcpUrl,
     apiUrl: result.apiUrl,
     rawToken: result.token,
     tokenId: result.tokenId,

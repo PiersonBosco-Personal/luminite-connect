@@ -1,7 +1,7 @@
 const DEFAULT_URL = "https://app.luminiteapp.com";
 
 export function parseArgs(argv) {
-  const out = { command: "connect", name: null, as: null, rotate: false, help: false, url: DEFAULT_URL };
+  const out = { command: "connect", name: null, as: null, mcpUrl: null, rotate: false, help: false, url: DEFAULT_URL };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -9,6 +9,7 @@ export function parseArgs(argv) {
     else if (arg === "--help" || arg === "-h") out.help = true;
     else if (arg === "--url") out.url = argv[++i] ?? out.url;
     else if (arg === "--as") out.as = argv[++i] ?? out.as;
+    else if (arg === "--mcp-url") out.mcpUrl = argv[++i] ?? out.mcpUrl;
     else if (!arg.startsWith("-")) positional.push(arg);
   }
   // strip a trailing slash so `${url}/cli/connect` never doubles up

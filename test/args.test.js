@@ -47,3 +47,9 @@ test("--as names the profile for a connect", () => {
   assert.equal(a.as, "local");
   assert.equal(a.url, "http://localhost:5173");
 });
+
+test("--mcp-url overrides the saved MCP URL (Docker host case)", () => {
+  const a = parseArgs(["--url", "http://localhost:5173", "--as", "local", "--mcp-url", "http://host.docker.internal/api/mcp"]);
+  assert.equal(a.mcpUrl, "http://host.docker.internal/api/mcp");
+  assert.equal(a.command, "connect");
+});
