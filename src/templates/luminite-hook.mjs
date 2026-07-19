@@ -17,6 +17,51 @@ export const LUMINITE_WRITE_TOOLS = new Set([
   "mcp__luminite__add_thread_entry",
 ]);
 
+// ── git-commit heartbeat: pure helpers (exported for tests) ──────────────────
+
+/** Decide what to do with a repo given its stored cursor and current HEAD. */
+export function nextAction(lastSha, headSha) {
+  if (!lastSha) return "seed";          // first run — record HEAD, harvest nothing
+  if (lastSha === headSha) return "skip"; // no new commits
+  return "harvest";
+}
+
+const MAX_COMMIT_CONTENT = 500;
+
+/**
+ * Parse `git log --format=%H%x1f%s%x1f%b%x1e` output (fields \x1f-delimited,
+ * records \x1e-delimited, newest-first) into [{ sha, content }] ordered
+ * OLDEST-first so a consumer can advance a cursor monotonically. Content is the
+ * subject, plus the body when present, capped at MAX_COMMIT_CONTENT chars.
+ */
+export function parseCommitLog(stdout) {
+  const out = [];
+  for (const record of String(stdout).split("\x1e")) {
+    const r = record.trim();
+    if (!r) continue;
+    const [sha = "", subject = "", body = ""] = r.split("\x1f");
+    const s = subject.trim();
+    const b = body.trim();
+    let content = b ? `${s}\n\n${b}` : s;
+    if (content.length > MAX_COMMIT_CONTENT) content = content.slice(0, MAX_COMMIT_CONTENT) + "…";
+    out.push({ sha: sha.trim(), content });
+  }
+  return out.reverse(); // git log is newest-first → return oldest-first
+}
+
+/**
+ * The cursor sha after harvesting: unchanged if nothing was written, else the
+ * sha of the last successfully-written commit (commits are oldest-first). A
+ * network failure mid-batch leaves the cursor at the last success — next Stop
+ * retries the rest, so no entry is lost and none is duplicated.
+ * ponytail: the -n cap upstream means a >5-commit burst drops the oldest; that
+ * loss is intentional and bounded, and session-end wrap-up is the safety net.
+ */
+export function cursorAfter(commits, succeeded, lastSha) {
+  if (succeeded <= 0) return lastSha;
+  return commits[succeeded - 1].sha;
+}
+
 export const BLOCK_REASON =
   "You changed code this turn but no Luminite task is In Progress. Move the task " +
   "you're working on to In Progress with update_task (infer it from the open tasks; " +
