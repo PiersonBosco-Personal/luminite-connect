@@ -52,9 +52,10 @@ export function parseCommitLog(stdout) {
 
 /**
  * The cursor sha after harvesting: unchanged if nothing was written, else the
- * sha of the last successfully-written commit (commits are oldest-first). A
- * network failure mid-batch leaves the cursor at the last success — next Stop
- * retries the rest, so no entry is lost and none is duplicated.
+ * sha of the last commit we reached the server for (written or refused;
+ * commits are oldest-first). A network failure mid-batch leaves the cursor at
+ * the last success — next Stop retries the rest, so no entry is lost and none
+ * is duplicated.
  * ponytail: the -n cap upstream means a >5-commit burst drops the oldest; that
  * loss is intentional and bounded, and session-end wrap-up is the safety net.
  */
@@ -213,16 +214,23 @@ function config() {
 }
 
 async function rpc(mcpUrl, token, method, params) {
-  const res = await fetch(mcpUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  return res.json();
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 5000);
+  try {
+    const res = await fetch(mcpUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: ac.signal,
+    });
+    return res.json();
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 function git(repo, args) {
-  return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
+  return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", timeout: 5000 }).trim();
 }
 
 /**
@@ -234,7 +242,10 @@ async function harvestCommits(cfg) {
   const cursor = existsSync(cfg.cursorPath)
     ? (safeParse(readFileSync(cfg.cursorPath, "utf8")) ?? {})
     : {};
-  let dirty = false;
+  // ponytail: cursor persists per-repo, so a crash mid-repo can re-send that
+  // repo's <=5-commit batch (dup entries) next Stop; acceptable at this
+  // cardinality, tighten to per-commit if dup entries show up.
+  const save = () => writeFileSync(cfg.cursorPath, JSON.stringify(cursor, null, 2) + "\n");
 
   for (const rel of cfg.watchRepos) {
     const repo = join(cfg.installRoot, rel);
@@ -249,7 +260,7 @@ async function harvestCommits(cfg) {
     const last = cursor[rel];
     const action = nextAction(last, head);
     if (action === "skip") continue;
-    if (action === "seed") { cursor[rel] = head; dirty = true; continue; }
+    if (action === "seed") { cursor[rel] = head; save(); continue; }
 
     // action === "harvest": read up to 5 newest non-merge commits since `last`.
     let logOut;
@@ -257,29 +268,30 @@ async function harvestCommits(cfg) {
       logOut = git(repo, ["log", "--no-merges", "-n", "5", "--format=%H%x1f%s%x1f%b%x1e", `${last}..HEAD`]);
     } catch {
       // `last` sha is gone (rebase/reset rewrote history) → reseed, never replay.
-      cursor[rel] = head; dirty = true; continue;
+      cursor[rel] = head; save(); continue;
     }
 
     const commits = parseCommitLog(logOut);
-    let ok = 0;
+    let consumed = 0;
     for (const c of commits) {
       try {
-        const res = await rpc(cfg.mcpUrl, cfg.token, "tools/call", {
+        await rpc(cfg.mcpUrl, cfg.token, "tools/call", {
           name: "add_thread_entry",
           arguments: { type: "momentum", content: c.content, trigger: "commit" },
         });
-        if (res?.error) break; // server rejected → stop, don't advance past it
-        ok++;
       } catch {
-        break; // network error → stop; next Stop retries from the cursor
+        break; // couldn't reach the server (network/timeout) — stop; retry from the cursor next Stop
       }
+      // Reached the server. Whether it stored the entry or deterministically
+      // refused it, advance past this commit: a single poison-pill commit must
+      // not permanently wedge harvesting of every later commit in this repo.
+      // (A refused entry is dropped; session-end wrap-up is the safety net.)
+      consumed++;
     }
 
-    const newCursor = cursorAfter(commits, ok, last);
-    if (newCursor !== last) { cursor[rel] = newCursor; dirty = true; }
+    const newCursor = cursorAfter(commits, consumed, last);
+    if (newCursor !== last) { cursor[rel] = newCursor; save(); }
   }
-
-  if (dirty) writeFileSync(cfg.cursorPath, JSON.stringify(cursor, null, 2) + "\n");
 }
 
 async function sessionStart({ mcpUrl, token }) {
