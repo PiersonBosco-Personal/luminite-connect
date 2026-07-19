@@ -259,6 +259,25 @@ test("writeConfig gitignores the thread cursor file", () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("writeConfig preserves an empty watch_repos (user chose to watch nothing)", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-empty-"));
+  try {
+    mkdirSync(join(root, ".git"), { recursive: true });
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1, projectName: "P" });
+
+    // User prunes to empty: watch nothing.
+    const s0 = JSON.parse(readFileSync(paths.state, "utf8"));
+    s0.watch_repos = [];
+    writeFileSync(paths.state, JSON.stringify(s0));
+
+    // A re-run must NOT re-seed the empty list back to ["."].
+    writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1, projectName: "P" });
+    const s1 = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.deepEqual(s1.watch_repos, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("writeConfig re-run does not duplicate the CLAUDE.md block", () => {
   const dir = mkdtempSync(join(tmpdir(), "lc-claudemd2-"));
   try {
