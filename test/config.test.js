@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile } from "../src/config.js";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile, discoverRepos } from "../src/config.js";
 import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
@@ -203,6 +203,60 @@ test("writeConfig writes the Luminite block to project-root CLAUDE.md without gi
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("discoverRepos: a git-repo root → ['.']", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-disc-"));
+  try {
+    mkdirSync(join(root, ".git"), { recursive: true });
+    assert.deepEqual(discoverRepos(root), ["."]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("discoverRepos: non-git root → its child git repos only", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-disc2-"));
+  try {
+    mkdirSync(join(root, "api", ".git"), { recursive: true });
+    mkdirSync(join(root, "web", ".git"), { recursive: true });
+    mkdirSync(join(root, "docs"), { recursive: true }); // no .git → excluded
+    assert.deepEqual(discoverRepos(root).sort(), ["api", "web"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("writeConfig seeds watch_repos and preserves a user correction across re-run + switch", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-wr-"));
+  try {
+    mkdirSync(join(root, ".git"), { recursive: true }); // root is a git repo → seeds ["."]
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1, projectName: "P" });
+
+    let state = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.deepEqual(state.watch_repos, ["."]);
+
+    // User prunes the list by hand.
+    state.watch_repos = ["api", "web"];
+    writeFileSync(paths.state, JSON.stringify(state));
+
+    // A second connect must NOT clobber the correction.
+    writeConfig(paths, { name: "local", mcpUrl: "http://l/api/mcp", apiUrl: "http://l/api", rawToken: "t2", tokenId: 2, projectId: 1, projectName: "P" });
+    state = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.deepEqual(state.watch_repos, ["api", "web"]);
+
+    // Switching profiles must preserve it too.
+    applyProfile(paths, "prod");
+    state = JSON.parse(readFileSync(paths.state, "utf8"));
+    assert.deepEqual(state.watch_repos, ["api", "web"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("writeConfig gitignores the thread cursor file", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-gi-"));
+  try {
+    mkdirSync(join(root, ".git"), { recursive: true });
+    const paths = configPaths(root);
+    writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1, projectName: "P" });
+    assert.match(readFileSync(paths.gitignore, "utf8"), /\.claude\/luminite-thread-cursor\.json/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("writeConfig re-run does not duplicate the CLAUDE.md block", () => {

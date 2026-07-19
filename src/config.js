@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { mergeClaudeMd } from "./claudemd.js";
 
 export function mergeMcpJson(prev, mcpUrl) {
@@ -131,7 +132,7 @@ export function applyProfile(paths, name) {
   if (!prof) return null;
   writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), prof.mcp_url));
   writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), prof.raw_token));
-  writeJson(paths.state, { ...flatFor(name, prof), profiles: s.profiles });
+  writeJson(paths.state, { ...flatFor(name, prof), profiles: s.profiles, ...(s.watch_repos ? { watch_repos: s.watch_repos } : {}) });
   return prof;
 }
 
@@ -151,13 +152,30 @@ export function setProfile(paths, name, { mcpUrl, rawToken }) {
   return applyProfile(paths, name);
 }
 
+/**
+ * Seed the watched-repo list. If the install root is itself a git repo → ["."];
+ * otherwise its immediate child directories that are git repos; failing both, ["."].
+ * Deliberately over-includes (may pick up docs/tooling repos) — the user prunes
+ * the list in .claude/luminite-connect.json; first-run harvests nothing so there
+ * is no noise before they do.
+ */
+export function discoverRepos(root) {
+  if (existsSync(join(root, ".git"))) return ["."];
+  const out = [];
+  for (const e of readdirSync(root, { withFileTypes: true })) {
+    if (e.isDirectory() && existsSync(join(root, e.name, ".git"))) out.push(e.name);
+  }
+  return out.length ? out : ["."];
+}
+
 export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, tokenId, projectId, projectName }) {
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 
   writeJson(paths.mcpJson, mergeMcpJson(readJson(paths.mcpJson, {}), mcpUrl));
   writeJson(paths.settingsLocal, mergeSettingsLocal(readJson(paths.settingsLocal, {}), rawToken));
 
-  const profiles = { ...(normalizeState(paths).profiles || {}) };
+  const prior = normalizeState(paths);
+  const profiles = { ...(prior.profiles || {}) };
   profiles[name] = {
     token_id: tokenId,
     project_id: projectId,
@@ -166,12 +184,13 @@ export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, to
     project_name: projectName ?? null,
     raw_token: rawToken,
   };
-  writeJson(paths.state, { ...flatFor(name, profiles[name]), profiles });
+  const watch_repos = prior.watch_repos ?? discoverRepos(paths.root);
+  writeJson(paths.state, { ...flatFor(name, profiles[name]), profiles, watch_repos });
 
   const gi = existsSync(paths.gitignore) ? readFileSync(paths.gitignore, "utf8") : "";
   writeFileSync(
     paths.gitignore,
-    ensureGitignored(gi, [".claude/settings.local.json", ".claude/luminite-connect.json"]),
+    ensureGitignored(gi, [".claude/settings.local.json", ".claude/luminite-connect.json", ".claude/luminite-thread-cursor.json"]),
   );
 
   // CLAUDE.md is intentionally NOT gitignored: the block is meant to be
