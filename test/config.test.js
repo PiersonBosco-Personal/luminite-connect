@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile, discoverRepos, installLocalArtifacts } from "../src/config.js";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile, discoverRepos, installLocalArtifacts, ensureWatchRepos } from "../src/config.js";
 import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
@@ -311,4 +311,24 @@ test("writeConfig re-run does not duplicate the CLAUDE.md block", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("ensureWatchRepos seeds an absent list from discovery, leaves a present one (even []) untouched", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-ewr-"));
+  try {
+    mkdirSync(join(root, "api", ".git"), { recursive: true });
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    const paths = configPaths(root);
+
+    // Absent → seeds from discovery (root is not a git repo → child "api").
+    assert.deepEqual(ensureWatchRepos(paths).sort(), ["api"]);
+    assert.deepEqual(JSON.parse(readFileSync(paths.state, "utf8")).watch_repos, ["api"]);
+
+    // Present, including a hand-pruned empty list → left untouched.
+    const s = JSON.parse(readFileSync(paths.state, "utf8"));
+    s.watch_repos = [];
+    writeFileSync(paths.state, JSON.stringify(s));
+    assert.deepEqual(ensureWatchRepos(paths), []);
+    assert.deepEqual(JSON.parse(readFileSync(paths.state, "utf8")).watch_repos, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

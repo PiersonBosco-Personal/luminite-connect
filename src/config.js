@@ -168,6 +168,20 @@ export function discoverRepos(root) {
   return out.length ? out : ["."];
 }
 
+/**
+ * Seed watch_repos into the state file when absent (absent-only — a user's
+ * hand-pruned list, including an explicit [], is never overwritten). Lets an
+ * idempotent re-run get a working watch list without a full reconnect. Returns
+ * the effective list.
+ */
+export function ensureWatchRepos(paths) {
+  const s = normalizeState(paths);
+  if (s.watch_repos != null) return s.watch_repos; // present (incl. []) → leave it
+  const watch_repos = discoverRepos(paths.root);
+  writeJson(paths.state, { ...s, watch_repos });
+  return watch_repos;
+}
+
 export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, tokenId, projectId, projectName }) {
   if (!existsSync(paths.claudeDir)) mkdirSync(paths.claudeDir, { recursive: true });
 

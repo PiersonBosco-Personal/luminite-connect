@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeConfig, applyProfile, listProfiles, setProfile, installLocalArtifacts } from "./config.js";
+import { writeConfig, applyProfile, listProfiles, setProfile, installLocalArtifacts, ensureWatchRepos } from "./config.js";
 import { parseArgs } from "./args.js";
 import { configPaths, findProjectRoot } from "./paths.js";
 import { checkToken } from "./health.js";
@@ -108,9 +108,10 @@ const existing = profiles[name];
 // make sure the live files point at it and finish.
 if (!args.rotate && existing?.raw_token && existing?.mcp_url && (await checkToken(existing.mcp_url, existing.raw_token))) {
   applyProfile(paths, name);
+  ensureWatchRepos(paths);      // seed the heartbeat watch list if it was never set (absent-only)
   installHookHelper(paths);     // refresh the hook helper so a plain re-run picks up updates
   installLocalArtifacts(paths); // refresh the CLAUDE.md block + .gitignore entries
-  console.log(`Already connected as "${name}" → ${existing.project_name ?? "Luminite"} ✓  (refreshed hook + CLAUDE.md; use --rotate for a fresh token)`);
+  console.log(`Already connected as "${name}" → ${existing.project_name ?? "Luminite"} ✓  (refreshed hook, CLAUDE.md, and watch list; kept your token — use --rotate for a fresh one)`);
   process.exit(0);
 }
 
