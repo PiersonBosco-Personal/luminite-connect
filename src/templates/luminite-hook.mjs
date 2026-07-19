@@ -27,6 +27,12 @@ export function nextAction(lastSha, headSha) {
   return "harvest";
 }
 
+/** Resolve which repos to watch: an explicit list wins — even an empty one
+ *  (the user opting out). Only a missing/invalid key falls back to the install root. */
+export function resolveWatchRepos(state) {
+  return Array.isArray(state.watch_repos) ? state.watch_repos : ["."];
+}
+
 const MAX_COMMIT_CONTENT = 500;
 
 /**
@@ -206,9 +212,7 @@ function config() {
   // deriving it from api_url for older state files.
   const mcpUrl = state.mcp_url || (state.api_url ? `${state.api_url}/mcp` : null);
   const installRoot = join(claudeDir, "..");
-  const watchRepos = Array.isArray(state.watch_repos) && state.watch_repos.length
-    ? state.watch_repos
-    : ["."];
+  const watchRepos = resolveWatchRepos(state);
   const cursorPath = join(claudeDir, "luminite-thread-cursor.json");
   return { apiUrl: state.api_url, token, mcpUrl, installRoot, watchRepos, cursorPath };
 }

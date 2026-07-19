@@ -8,6 +8,7 @@ import {
   nextAction,
   parseCommitLog,
   cursorAfter,
+  resolveWatchRepos,
 } from "../src/templates/luminite-hook.mjs";
 
 const userPrompt = (t) => JSON.stringify({ type: "user", message: { role: "user", content: t } });
@@ -160,4 +161,14 @@ test("cursorAfter: partial success → last successful sha", () => {
 });
 test("cursorAfter: all succeeded → newest sha", () => {
   assert.equal(cursorAfter([{ sha: "a" }, { sha: "b" }], 2, "old"), "b");
+});
+
+test("resolveWatchRepos: missing key → ['.']", () => {
+  assert.deepEqual(resolveWatchRepos({}), ["."]);
+});
+test("resolveWatchRepos: explicit list is honored", () => {
+  assert.deepEqual(resolveWatchRepos({ watch_repos: ["api", "web"] }), ["api", "web"]);
+});
+test("resolveWatchRepos: explicit empty list = watch nothing (NOT re-seeded to ['.'])", () => {
+  assert.deepEqual(resolveWatchRepos({ watch_repos: [] }), []);
 });
