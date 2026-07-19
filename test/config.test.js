@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile, discoverRepos } from "../src/config.js";
+import { mergeMcpJson, mergeSettingsLocal, ensureGitignored, writeConfig, applyProfile, listProfiles, setProfile, discoverRepos, installLocalArtifacts } from "../src/config.js";
 import { configPaths } from "../src/paths.js";
 
 test("mergeMcpJson adds the luminite server, preserving others", () => {
@@ -275,6 +275,21 @@ test("writeConfig preserves an empty watch_repos (user chose to watch nothing)",
     writeConfig(paths, { name: "prod", mcpUrl: "https://x/api/mcp", apiUrl: "https://x/api", rawToken: "t", tokenId: 1, projectId: 1, projectName: "P" });
     const s1 = JSON.parse(readFileSync(paths.state, "utf8"));
     assert.deepEqual(s1.watch_repos, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("installLocalArtifacts writes the gitignore entries and the CLAUDE.md block (idempotent)", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-artifacts-"));
+  try {
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    const paths = configPaths(root);
+    installLocalArtifacts(paths);
+    installLocalArtifacts(paths); // second call must not duplicate
+    const gi = readFileSync(paths.gitignore, "utf8");
+    assert.match(gi, /\.claude\/luminite-thread-cursor\.json/);
+    assert.equal((gi.match(/luminite-thread-cursor\.json/g) || []).length, 1); // idempotent, no dupes
+    const claude = readFileSync(paths.claudeMd, "utf8");
+    assert.match(claude, /LUMINITE:START/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

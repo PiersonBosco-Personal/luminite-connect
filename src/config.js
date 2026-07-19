@@ -187,6 +187,16 @@ export function writeConfig(paths, { name = "prod", mcpUrl, rawToken, apiUrl, to
   const watch_repos = prior.watch_repos ?? discoverRepos(paths.root);
   writeJson(paths.state, { ...flatFor(name, profiles[name]), profiles, watch_repos });
 
+  installLocalArtifacts(paths);
+}
+
+/**
+ * Write the local, connection-INDEPENDENT artifacts: the .gitignore entries and
+ * the CLAUDE.md Luminite block. Split out of writeConfig so the idempotent
+ * "already connected" re-run can refresh them too (pick up hook/block updates)
+ * without re-minting a token. Both writes are idempotent on re-run.
+ */
+export function installLocalArtifacts(paths) {
   const gi = existsSync(paths.gitignore) ? readFileSync(paths.gitignore, "utf8") : "";
   writeFileSync(
     paths.gitignore,
