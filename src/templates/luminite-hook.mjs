@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Installed into a target repo at .claude/hooks/luminite-hook.mjs and invoked
 // by Claude Code's SessionStart and Stop hooks. Zero dependencies.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -203,7 +204,12 @@ function config() {
   // Prefer the explicit mcp_url persisted by the installer; fall back to
   // deriving it from api_url for older state files.
   const mcpUrl = state.mcp_url || (state.api_url ? `${state.api_url}/mcp` : null);
-  return { apiUrl: state.api_url, token, mcpUrl };
+  const installRoot = join(claudeDir, "..");
+  const watchRepos = Array.isArray(state.watch_repos) && state.watch_repos.length
+    ? state.watch_repos
+    : ["."];
+  const cursorPath = join(claudeDir, "luminite-thread-cursor.json");
+  return { apiUrl: state.api_url, token, mcpUrl, installRoot, watchRepos, cursorPath };
 }
 
 async function rpc(mcpUrl, token, method, params) {
@@ -213,6 +219,67 @@ async function rpc(mcpUrl, token, method, params) {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
   return res.json();
+}
+
+function git(repo, args) {
+  return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
+}
+
+/**
+ * Harvest new commits from each watched repo into the Thread as momentum/commit
+ * entries. Best-effort: any git or network failure is swallowed so the hook can
+ * never trap the session. Cursor advances only past successfully-written commits.
+ */
+async function harvestCommits(cfg) {
+  const cursor = existsSync(cfg.cursorPath)
+    ? (safeParse(readFileSync(cfg.cursorPath, "utf8")) ?? {})
+    : {};
+  let dirty = false;
+
+  for (const rel of cfg.watchRepos) {
+    const repo = join(cfg.installRoot, rel);
+    let head;
+    try {
+      git(repo, ["rev-parse", "--git-dir"]); // throws if not a git repo
+      head = git(repo, ["rev-parse", "HEAD"]); // throws if no commits yet
+    } catch {
+      continue;
+    }
+
+    const last = cursor[rel];
+    const action = nextAction(last, head);
+    if (action === "skip") continue;
+    if (action === "seed") { cursor[rel] = head; dirty = true; continue; }
+
+    // action === "harvest": read up to 5 newest non-merge commits since `last`.
+    let logOut;
+    try {
+      logOut = git(repo, ["log", "--no-merges", "-n", "5", "--format=%H%x1f%s%x1f%b%x1e", `${last}..HEAD`]);
+    } catch {
+      // `last` sha is gone (rebase/reset rewrote history) → reseed, never replay.
+      cursor[rel] = head; dirty = true; continue;
+    }
+
+    const commits = parseCommitLog(logOut);
+    let ok = 0;
+    for (const c of commits) {
+      try {
+        const res = await rpc(cfg.mcpUrl, cfg.token, "tools/call", {
+          name: "add_thread_entry",
+          arguments: { type: "momentum", content: c.content, trigger: "commit" },
+        });
+        if (res?.error) break; // server rejected → stop, don't advance past it
+        ok++;
+      } catch {
+        break; // network error → stop; next Stop retries from the cursor
+      }
+    }
+
+    const newCursor = cursorAfter(commits, ok, last);
+    if (newCursor !== last) { cursor[rel] = newCursor; dirty = true; }
+  }
+
+  if (dirty) writeFileSync(cfg.cursorPath, JSON.stringify(cursor, null, 2) + "\n");
 }
 
 async function sessionStart({ mcpUrl, token }) {
@@ -249,6 +316,10 @@ function safeParse(s) {
 }
 
 async function stop(cfg) {
+  // Git-commit heartbeat: harvest new commits into the Thread. Independent of the
+  // task-tracking gate below, and cursor-guarded so re-invocation is idempotent.
+  try { await harvestCommits(cfg); } catch { /* never trap the session on a hook error */ }
+
   // Claude Code passes { transcript_path, stop_hook_active, cwd, ... } on stdin.
   const input = safeParse(await readStdin()) ?? {};
 
