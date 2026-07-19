@@ -11,7 +11,8 @@ This project is tracked in Luminite via the \`luminite\` MCP server. Keep it in 
 
 - **Starting a task** → call \`update_task\` to move it to In Progress.
 - **Finishing a task** → call \`complete_task\`.
-- **Recording a decision, a ruled-out dead-end, or where you left off** → call \`add_thread_entry\` (the project memory that's replayed to you next session).
+- **Settling a decision** (a library, approach, or tradeoff) → call \`log_decision\` with the decision and the why (pass \`supersedes\` to replace an earlier one).
+- **A ruled-out dead-end, a gotcha, or where you left off** → call \`add_thread_entry\` (the project memory that's replayed to you next session).
 - **Unsure which task applies** → ask, don't guess.
 
 The full set of Luminite tools and when to use each is described in the MCP tool list itself — consult it rather than assuming. If you're missing project state, call \`get_session_context\` first.
