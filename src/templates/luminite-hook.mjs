@@ -16,6 +16,7 @@ export const LUMINITE_WRITE_TOOLS = new Set([
   "mcp__luminite__create_note",
   "mcp__luminite__update_note",
   "mcp__luminite__add_thread_entry",
+  "mcp__luminite__log_decision",
 ]);
 
 // ── git-commit heartbeat: pure helpers (exported for tests) ──────────────────
