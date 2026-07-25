@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mergeClaudeMd } from "./claudemd.js";
-import { installAskCommand } from "./hooks.js";
+import { installAskCommand } from "./templates.js";
 
 export function mergeMcpJson(prev, mcpUrl) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};

@@ -4,7 +4,7 @@ import { parseArgs } from "./args.js";
 import { configPaths, findProjectRoot } from "./paths.js";
 import { checkToken } from "./health.js";
 import { connectViaBrowser } from "./connect.js";
-import { installHookHelper } from "./hooks.js";
+import { installHookHelper } from "./templates.js";
 import os from "node:os";
 
 const HELP = `luminite-connect — connect this repo to its Luminite project for Claude Code
