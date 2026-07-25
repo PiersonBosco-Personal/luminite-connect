@@ -21,6 +21,8 @@ export function configPaths(root) {
     state: join(root, ".claude", "luminite-connect.json"),
     hooksDir: join(root, ".claude", "hooks"),
     hookHelper: join(root, ".claude", "hooks", "luminite-hook.mjs"),
+    commandsDir: join(root, ".claude", "commands", "luminite"),
+    askCommand: join(root, ".claude", "commands", "luminite", "ask.md"),
     gitignore: join(root, ".gitignore"),
     claudeMd: join(root, "CLAUDE.md"),
   };

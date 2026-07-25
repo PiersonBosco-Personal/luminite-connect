@@ -9,3 +9,9 @@ export function installHookHelper(paths) {
   if (!existsSync(paths.hooksDir)) mkdirSync(paths.hooksDir, { recursive: true });
   copyFileSync(join(here, "templates", "luminite-hook.mjs"), paths.hookHelper);
 }
+
+/** Copy the /luminite:ask slash command into the target repo's .claude/commands/luminite/. */
+export function installAskCommand(paths) {
+  if (!existsSync(paths.commandsDir)) mkdirSync(paths.commandsDir, { recursive: true });
+  copyFileSync(join(here, "templates", "ask-command.md"), paths.askCommand);
+}

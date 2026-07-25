@@ -313,6 +313,22 @@ test("writeConfig re-run does not duplicate the CLAUDE.md block", () => {
   }
 });
 
+test("installLocalArtifacts writes the /luminite:ask slash command, and does NOT gitignore it (team-shared, no secrets)", () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-ask-"));
+  try {
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    const paths = configPaths(root);
+    installLocalArtifacts(paths);
+    installLocalArtifacts(paths); // second call must be a clean no-op overwrite, not an error
+    const cmd = readFileSync(paths.askCommand, "utf8");
+    assert.match(cmd, /description:/);
+    assert.match(cmd, /\$ARGUMENTS/);
+    assert.match(cmd, /recall/);
+    const gi = readFileSync(paths.gitignore, "utf8");
+    assert.ok(!gi.includes(".claude/commands/luminite/ask.md"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("ensureWatchRepos seeds an absent list from discovery, leaves a present one (even []) untouched", () => {
   const root = mkdtempSync(join(tmpdir(), "lc-ewr-"));
   try {

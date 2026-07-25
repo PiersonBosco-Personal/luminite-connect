@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mergeClaudeMd } from "./claudemd.js";
+import { installAskCommand } from "./hooks.js";
 
 export function mergeMcpJson(prev, mcpUrl) {
   const next = prev && typeof prev === "object" ? { ...prev } : {};
@@ -221,4 +222,10 @@ export function installLocalArtifacts(paths) {
   // committed and shared with the team. Idempotent via markers on re-run.
   const prevClaude = existsSync(paths.claudeMd) ? readFileSync(paths.claudeMd, "utf8") : "";
   writeFileSync(paths.claudeMd, mergeClaudeMd(prevClaude));
+
+  // /luminite:ask is also intentionally NOT gitignored — same reasoning as
+  // CLAUDE.md: it's a static, secret-free command every teammate should get,
+  // not a personal/connection-specific artifact like settings.local.json or
+  // the state/cursor files. A plain file copy is idempotent by construction.
+  installAskCommand(paths);
 }
