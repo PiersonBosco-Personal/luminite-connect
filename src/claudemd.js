@@ -15,6 +15,8 @@ This project is tracked in Luminite via the \`luminite\` MCP server. Keep it in 
 - **A ruled-out dead-end, a gotcha, or where you left off** → call \`add_thread_entry\` (the project memory that's replayed to you next session).
 - **Unsure which task applies** → ask, don't guess.
 
+**Never write a Luminite internal ID (task, project, note, decision, thread entry) to the user.** Those IDs are invisible in their dashboard, so they mean nothing to them. Pass IDs to the MCP tools; refer to things by title in anything the user reads.
+
 The full set of Luminite tools and when to use each is described in the MCP tool list itself — consult it rather than assuming. If you're missing project state, call \`get_session_context\` first.
 ${END}`;
 

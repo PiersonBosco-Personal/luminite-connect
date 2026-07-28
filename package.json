@@ -1,6 +1,6 @@
 {
   "name": "luminite-connect",
-  "version": "0.2.10",
+  "version": "1.0.0",
   "description": "Connect a repo to its Luminite project for Claude Code (token + hooks).",
   "type": "module",
   "bin": {
