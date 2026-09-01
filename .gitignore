@@ -1,0 +1,9 @@
+
+# Local agent tooling — never commit
+.claude/settings.local.json
+.claude/luminite-connect.json
+.claude/luminite-thread-cursor.json
+.superpowers/
+.gstack/
+docs/superpowers/
+docs/plans/
